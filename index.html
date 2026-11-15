@@ -212,7 +212,7 @@ function lsLoad(){try{const o=JSON.parse(localStorage.getItem(LS)||"null");S.lsO
   if(Array.isArray(o.cats)&&o.cats.length){S.cats=normCats(o.cats);migrateAll(o.catsV||0)}
   }catch(e){}}
 const CATS_V=7;
-const APP_VERSION="1.5.0"; /* bump with every change */
+const APP_VERSION="11.15.2026.6"; /* MM.DD.YYYY.N — date of release, N = release number that day */
 /* bring an older category list (and entries that used old categories) up to date */
 function migrateAll(from){
   if(from>=CATS_V)return;
