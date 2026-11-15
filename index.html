@@ -62,6 +62,7 @@ textarea{resize:vertical;min-height:44px}
 .sec{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 2px 6px;display:flex;justify-content:space-between}
 .item{display:flex;gap:10px;align-items:flex-start;padding:10px 2px;border-top:1px solid var(--line)}
 .item:first-child{border-top:0}
+.ver{text-align:center;color:var(--muted);font-size:12px;margin:18px 0 6px}
 .btn.ok{background:var(--pos);color:#fff;transition:background .2s}
 [data-act="add"]{white-space:nowrap;min-width:92px}
 .item.new{animation:flash 1.6s ease-out}
@@ -153,7 +154,7 @@ svg text{fill:var(--muted);font-size:10px}
 (function(){
 const PTS=[3,2,1,0,-1,-2,-3];
 const BASE_PTS=1; /* default score unless a subcategory sets its own */
-const STEWARDSHIP={name:"Stewardship",subs:["Money","Home"],subPts:{},items:{Money:[{name:"Payday update",pts:1},{name:"Missed payment",pts:-2}],Home:[{name:"Trash",pts:1,days:[3]}]}};
+const STEWARDSHIP={name:"Stewardship",subs:["Money","Home"],subPts:{},items:{Money:[{name:"Payday update",pts:1},{name:"Missed payment",pts:-2}],Home:[{name:"Clean",pts:1},{name:"Dishes",pts:1},{name:"Trash",pts:1,days:[3]}]}};
 const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const LEADERSHIP={name:"Leadership",subs:[],subPts:{},items:{}};
 const DEFAULT_CATS=[
@@ -210,7 +211,8 @@ function lsLoad(){try{const o=JSON.parse(localStorage.getItem(LS)||"null");S.lsO
   if(o.days&&typeof o.days==="object")for(const d in o.days)if(Array.isArray(o.days[d])&&o.days[d].length)S.days[d]=o.days[d].map(norm);
   if(Array.isArray(o.cats)&&o.cats.length){S.cats=normCats(o.cats);migrateAll(o.catsV||0)}
   }catch(e){}}
-const CATS_V=6;
+const CATS_V=7;
+const APP_VERSION="1.5.0"; /* bump with every change */
 /* bring an older category list (and entries that used old categories) up to date */
 function migrateAll(from){
   if(from>=CATS_V)return;
@@ -220,6 +222,9 @@ function migrateAll(from){
   if(from<5)migrate5();
   if(from<6){const st=S.cats.find(c=>c.name==="Stewardship");
     if(st&&st.subs.includes("Home")){const l=st.items.Home||(st.items.Home=[]);if(!l.some(q=>q.name==="Trash"))l.push({name:"Trash",pts:1,days:[3]})}}
+  if(from<7){const st=S.cats.find(c=>c.name==="Stewardship");
+    if(st&&st.subs.includes("Home")){const l=st.items.Home||(st.items.Home=[]);
+      ["Dishes","Clean"].forEach(n=>{if(!l.some(q=>q.name===n))l.unshift({name:n,pts:1})})}}
   L.catsDirty=true;lsSave();
 }
 function moveEntries(fromCat,toCat,defSub){
@@ -472,7 +477,7 @@ function vProgress(){
     if(hasSubs&&open)subs.sort((a,b)=>(b[1].pos+b[1].neg)-(a[1].pos+a[1].neg)).forEach(([sn,s])=>{const sn2=s.pos-s.neg;
       h+=`<div class="catrow subrow"><div class="row"><span>${esc(sn)}</span><span class="score ${cls(sn2)}">${sgn(sn2)}</span></div>${dvBar(s.pos,s.neg,max)}</div>`});
   });
-  h+=`</div>`;
+  h+=`</div><div class="ver">Progress Log v${APP_VERSION}</div>`;
   return h;
 }
 function weekChart(){
