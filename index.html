@@ -62,6 +62,12 @@ textarea{resize:vertical;min-height:44px}
 .sec{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 2px 6px;display:flex;justify-content:space-between}
 .item{display:flex;gap:10px;align-items:flex-start;padding:10px 2px;border-top:1px solid var(--line)}
 .item:first-child{border-top:0}
+.btn.ok{background:var(--pos);color:#fff;transition:background .2s}
+[data-act="add"]{white-space:nowrap;min-width:92px}
+.item.new{animation:flash 1.6s ease-out}
+@keyframes flash{0%{background:var(--pos-bg)}100%{background:transparent}}
+.runlist .item{align-items:center}
+.runlist .tm{flex:none;width:58px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .item .tx{cursor:pointer}
 .edit{flex:none;border:0;background:transparent;color:var(--muted);font-size:16px;padding:0 2px;margin-top:-1px;line-height:1.4}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
@@ -312,8 +318,12 @@ function addEntry(){
   if(!S.cat){toast("Add a category in Setup first");return}
   const e={id:nid(),kind:S.kind,pts:S.pts,cat:S.cat,sub:S.sub,text,t:Date.now()};
   S.days[S.date]=entries(S.date).concat([e]);saveDay(S.date);
-  ta.value="";render();toast(sgn(S.pts)+" logged");
-  setTimeout(()=>{const t=$("txt");t&&t.focus()},0);
+  S.justAdded=e.id;clearTimeout(addEntry._t);
+  ta.value="";render();toast(`✓ ${sgn(e.pts)} saved · ${label(e)}`);
+  try{navigator.vibrate&&navigator.vibrate(30)}catch(err){}
+  addEntry._t=setTimeout(()=>{S.justAdded=null;const b=document.querySelector('[data-act="add"]');if(b){b.classList.remove("ok");b.textContent="Add"}
+    document.querySelectorAll(".item.new").forEach(x=>x.classList.remove("new"))},1600);
+  const r=document.querySelector(".runlist");if(r)r.scrollIntoView({behavior:"smooth",block:"nearest"});
 }
 function findEntry(id){for(const d in S.days){const i=S.days[d].findIndex(e=>e.id===id);if(i>-1)return{d,i,e:S.days[d][i]}}return null}
 function toggleTask(id){
@@ -340,10 +350,17 @@ function render(){
   v.innerHTML=S.view==="today"?vToday():S.view==="history"?vHistory():S.view==="progress"?vProgress():vSettings();
 }
 
+function runHTML(list){
+  const sorted=list.slice().sort((a,b)=>(a.t||0)-(b.t||0));
+  return sorted.map(e=>`<div class="item ${S.justAdded===e.id?"new":""}"><span class="tm">${e.t?new Date(e.t).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}):""}</span>
+    <div class="tx" data-act="edit" data-id="${esc(e.id)}"><span>${esc(e.text)}</span><div class="meta">${esc(label(e))}</div></div>
+    <span class="badge ${cls(e.pts)}">${sgn(e.pts)}</span>
+    <button class="edit" data-act="edit" data-id="${esc(e.id)}" aria-label="Edit entry">✎</button></div>`).join("");
+}
 function itemHTML(e,showDate){
   const isTask=e.kind==="task";
   const badge=isTask&&!e.done?`<span class="badge pend">${sgn(e.pts)}</span>`:`<span class="badge ${cls(e.pts)}">${sgn(e.pts)}</span>`;
-  return `<div class="item ${isTask&&e.done?"done":""}">
+  return `<div class="item ${isTask&&e.done?"done":""} ${S.justAdded===e.id?"new":""}">
     ${isTask?`<button class="chk ${e.done?"on":""}" data-act="toggle" data-id="${esc(e.id)}" aria-label="Mark done">${e.done?"✓":""}</button>`:""}
     <div class="tx" data-act="edit" data-id="${esc(e.id)}"><span>${esc(e.text)}</span>
       <div class="meta">${esc(label(e))}${showDate?" · "+esc(showDate):""}${isTask?(e.done&&e.doneOn?" · done "+esc(nice(e.doneOn,{month:"short",day:"numeric"})):" · task"):""}</div></div>
@@ -360,7 +377,7 @@ function formHTML(){
     ${c&&c.subs.length?`<div class="chips subs">${c.subs.map(x=>`<button class="chip ${S.sub===x?"on":""}" data-act="sub" data-s="${esc(x)}">${esc(x)}</button>`).join("")}</div>`:""}
     ${quick.length?`<div class="chips quick">${quick.map((q,k)=>`<button class="chip" data-act="quick" data-k="${k}">${esc(q.name)} ${sgn(q.pts)}</button>`).join("")}</div>`:""}
     <div class="row"><textarea id="txt" rows="1" placeholder="${S.pts>0?"What went well?":S.pts<0?"What went wrong? (and the lesson)":"What happened?"}"></textarea>
-    <button class="btn" data-act="add">Add</button></div></div>`;
+    <button class="btn ${S.justAdded?"ok":""}" data-act="add">${S.justAdded?"✓ Added":"Add"}</button></div></div>`;
 }
 
 function colList(list){return list.length?list.map(e=>itemHTML(e)).join(""):`<div class="empty">None</div>`}
@@ -380,6 +397,9 @@ function vToday(){
       <div class="card"><div class="colhead n">Negatives ${sgn(neg)}</div>${colList(logs.filter(e=>e.pts<0))}</div></div>
       ${zero.length?`<div class="card" style="padding:4px 12px"><div class="colhead">Neutral</div>${zero.map(e=>itemHTML(e)).join("")}</div>`:""}`}
   if(!list.length)h+=`<div class="empty">Nothing logged for this day yet.</div>`;
+  else{const sc=dayScore(S.date);
+    h+=`<div class="sec"><span>Running list · ${list.length} entr${list.length>1?"ies":"y"}</span><span class="score ${cls(sc)}">${sgn(sc)}</span></div>
+      <div class="card runlist" style="padding:4px 12px">${runHTML(list)}</div>`}
   return h;
 }
 
