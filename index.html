@@ -181,6 +181,7 @@ function cls(n){return n>0?"p":n<0?"n":"z"}
 function ptsButtons(cur,act){return PTS.map(p=>`<button class="${cls(p)} ${cur===p?"on":""}" ${act}="pts" data-p="${p}">${sgn(p)}</button>`).join("")}
 function catObj(name){return S.cats.find(c=>c.name===name)}
 function label(e){return e.sub?e.cat+" › "+e.sub:e.cat}
+function title(e){return e.text||e.sub||e.cat}
 function counted(e){return e.pts}
 
 /* normalize older entries (win/task/blunder) into the scored model */
@@ -212,7 +213,7 @@ function lsLoad(){try{const o=JSON.parse(localStorage.getItem(LS)||"null");S.lsO
   if(Array.isArray(o.cats)&&o.cats.length){S.cats=normCats(o.cats);migrateAll(o.catsV||0)}
   }catch(e){}}
 const CATS_V=7;
-const APP_VERSION="11.15.2026.6"; /* MM.DD.YYYY.N — date of release, N = release number that day */
+const APP_VERSION="11.15.2026.7"; /* MM.DD.YYYY.N — date of release, N = release number that day */
 /* bring an older category list (and entries that used old categories) up to date */
 function migrateAll(from){
   if(from>=CATS_V)return;
@@ -319,7 +320,7 @@ function statusLine(){
 
 /* ---------- mutations ---------- */
 function addEntry(){
-  const ta=$("txt");const text=ta.value.trim();if(!text){ta.focus();return}
+  const ta=$("txt");const text=ta.value.trim();
   if(!S.cat){toast("Add a category in Setup first");return}
   const e={id:nid(),kind:S.kind,pts:S.pts,cat:S.cat,sub:S.sub,text,t:Date.now()};
   S.days[S.date]=entries(S.date).concat([e]);saveDay(S.date);
@@ -358,7 +359,7 @@ function render(){
 function runHTML(list){
   const sorted=list.slice().sort((a,b)=>(a.t||0)-(b.t||0));
   return sorted.map(e=>`<div class="item ${S.justAdded===e.id?"new":""}"><span class="tm">${e.t?new Date(e.t).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}):""}</span>
-    <div class="tx" data-act="edit" data-id="${esc(e.id)}"><span>${esc(e.text)}</span><div class="meta">${esc(label(e))}</div></div>
+    <div class="tx" data-act="edit" data-id="${esc(e.id)}"><span>${esc(title(e))}</span><div class="meta">${esc(label(e))}</div></div>
     <span class="badge ${cls(e.pts)}">${sgn(e.pts)}</span>
     <button class="edit" data-act="edit" data-id="${esc(e.id)}" aria-label="Edit entry">✎</button></div>`).join("");
 }
@@ -367,7 +368,7 @@ function itemHTML(e,showDate){
   const badge=isTask&&!e.done?`<span class="badge pend">${sgn(e.pts)}</span>`:`<span class="badge ${cls(e.pts)}">${sgn(e.pts)}</span>`;
   return `<div class="item ${isTask&&e.done?"done":""} ${S.justAdded===e.id?"new":""}">
     ${isTask?`<button class="chk ${e.done?"on":""}" data-act="toggle" data-id="${esc(e.id)}" aria-label="Mark done">${e.done?"✓":""}</button>`:""}
-    <div class="tx" data-act="edit" data-id="${esc(e.id)}"><span>${esc(e.text)}</span>
+    <div class="tx" data-act="edit" data-id="${esc(e.id)}"><span>${esc(title(e))}</span>
       <div class="meta">${esc(label(e))}${showDate?" · "+esc(showDate):""}${isTask?(e.done&&e.doneOn?" · done "+esc(nice(e.doneOn,{month:"short",day:"numeric"})):" · task"):""}</div></div>
     ${badge}
     <button class="edit" data-act="edit" data-id="${esc(e.id)}" aria-label="Edit entry">✎</button>
@@ -381,7 +382,7 @@ function formHTML(){
     <div class="chips">${S.cats.map(x=>`<button class="chip ${S.cat===x.name?"on":""}" data-act="cat" data-c="${esc(x.name)}">${esc(x.name)}</button>`).join("")}</div>
     ${c&&c.subs.length?`<div class="chips subs">${c.subs.map(x=>`<button class="chip ${S.sub===x?"on":""}" data-act="sub" data-s="${esc(x)}">${esc(x)}</button>`).join("")}</div>`:""}
     ${quick.length?`<div class="chips quick">${quick.map((q,k)=>`<button class="chip" data-act="quick" data-k="${k}">${esc(q.name)} ${sgn(q.pts)}</button>`).join("")}</div>`:""}
-    <div class="row"><textarea id="txt" rows="1" placeholder="${S.pts>0?"What went well?":S.pts<0?"What went wrong? (and the lesson)":"What happened?"}"></textarea>
+    <div class="row"><textarea id="txt" rows="1" placeholder="Comment"></textarea>
     <button class="btn ${S.justAdded?"ok":""}" data-act="add">${S.justAdded?"✓ Added":"Add"}</button></div></div>`;
 }
 
@@ -436,7 +437,7 @@ function vHistory(){
     <input type="text" id="q" placeholder="Search entries…" value="${esc(S.q)}" style="margin-bottom:12px">`;
   const q=S.q.toLowerCase();const ds=Object.keys(S.days).sort().reverse();let shown=0;
   for(const d of ds){
-    const items=S.days[d].filter(e=>(S.fSign==="all"||(S.fSign==="zero"?e.pts===0:S.fSign==="pos"?e.pts>0:e.pts<0))&&matchCat(e,S.fCat)&&(!q||e.text.toLowerCase().includes(q)));
+    const items=S.days[d].filter(e=>(S.fSign==="all"||(S.fSign==="zero"?e.pts===0:S.fSign==="pos"?e.pts>0:e.pts<0))&&matchCat(e,S.fCat)&&(!q||title(e).toLowerCase().includes(q)));
     if(!items.length)continue;shown++;
     const sc=items.reduce((s,e)=>s+counted(e),0);
     h+=`<div class="card" style="padding:10px 12px"><div class="dayhead"><span data-act="goto" data-d="${d}">${esc(nice(d,{weekday:"short",month:"short",day:"numeric",year:"numeric"}))}</span><span class="score ${cls(sc)}">${sgn(sc)}</span></div>
@@ -539,7 +540,7 @@ function editSheet(id){
     <div class="pts">${ptsButtons(e.pts,"data-sact").replace(/="pts"/g,'="epts"')}</div>
     <div class="row" style="margin-bottom:10px"><select id="ecat">${allCats().map(c=>`<option ${c.name===e.cat?"selected":""}>${esc(c.name)}</option>`).join("")}</select>
     <select id="esub">${subSelect(e.cat,e.sub)}</select></div>
-    <textarea id="etxt" rows="3" style="margin-bottom:10px">${esc(e.text)}</textarea>
+    <textarea id="etxt" rows="3" placeholder="Comment" style="margin-bottom:10px">${esc(e.text)}</textarea>
     <input type="date" id="edate" value="${f.d}" max="${today()}" style="margin-bottom:12px">
     <div class="row" style="justify-content:space-between"><button class="btn danger" data-sact="del">Delete</button>
     <div class="row"><button class="btn ghost" data-sact="close">Cancel</button><button class="btn" data-sact="save">Save</button></div></div>`);
@@ -575,7 +576,7 @@ $("sheetBg").addEventListener("click",ev=>{
   const f=findEntry(sh.dataset.id);if(!f)return closeSheet();
   if(a==="del"){S.days[f.d]=S.days[f.d].filter(x=>x.id!==f.e.id);saveDay(f.d);closeSheet();render();toast("Deleted");return}
   if(a==="save"){
-    const text=$("etxt").value.trim();if(!text)return;
+    const text=$("etxt").value.trim();
     const nd=$("edate").value||f.d;
     const e=Object.assign({},f.e,{text,cat:$("ecat").value,sub:$("esub").value,pts:+sh.dataset.pts});
     if(nd!==f.d){S.days[f.d]=S.days[f.d].filter(x=>x.id!==e.id);saveDay(f.d);S.days[nd]=entries(nd).concat([e]);saveDay(nd)}
