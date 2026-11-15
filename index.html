@@ -56,6 +56,15 @@ textarea{resize:vertical;min-height:44px}
 .sec{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 2px 6px;display:flex;justify-content:space-between}
 .item{display:flex;gap:10px;align-items:flex-start;padding:10px 2px;border-top:1px solid var(--line)}
 .item:first-child{border-top:0}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.cols .card{padding:4px 10px;margin:0}
+.cols .item{gap:7px;font-size:15px}
+.cols .badge{min-width:28px;font-size:13px}
+.colhead{font-size:12px;font-weight:700;padding:8px 2px 2px}
+.colhead.n{color:var(--neg)}.colhead.p{color:var(--pos)}
+.cols .empty{font-size:13px;padding:8px 2px}
+.subcols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.subcols>div{min-width:0}
 .badge{flex:none;min-width:34px;text-align:center;border-radius:8px;padding:2px 0;font-weight:700;font-size:14px}
 .badge.p{background:var(--pos-bg);color:var(--pos)}.badge.n{background:var(--neg-bg);color:var(--neg)}
 .badge.pend{background:transparent;border:1px dashed var(--line);color:var(--muted)}
@@ -129,8 +138,9 @@ svg text{fill:var(--muted);font-size:10px}
 <script>
 (function(){
 const PTS=[-3,-2,-1,1,2,3];
+const SUB_DEFAULT_PTS={Sleep:1}; /* picking one of these subcategories presets its points */
 const DEFAULT_CATS=[
-  {name:"Vitality",subs:["Fitness","Weight","Grooming"]},
+  {name:"Vitality",subs:["Sleep","Fitness","Weight","Grooming","Other"]},
   {name:"Family",subs:[]},{name:"Work",subs:[]},{name:"Money",subs:[]},
   {name:"Learning",subs:[]},{name:"Home",subs:[]},{name:"Mind",subs:[]}
 ];
@@ -169,10 +179,13 @@ function normCats(arr){
 
 /* ---------- storage (this device) ---------- */
 const LS="progresslog.v2";
-function lsSave(){try{localStorage.setItem(LS,JSON.stringify({days:S.days,cats:S.cats,savedAt:Date.now()}));return true}catch(e){toast("Couldn't save on this device");return false}}
+function lsSave(){try{localStorage.setItem(LS,JSON.stringify({days:S.days,cats:S.cats,catsV:3,savedAt:Date.now()}));return true}catch(e){toast("Couldn't save on this device");return false}}
 function lsLoad(){try{const o=JSON.parse(localStorage.getItem(LS)||"null");if(!o)return;
   if(o.days&&typeof o.days==="object")for(const d in o.days)if(Array.isArray(o.days[d])&&o.days[d].length)S.days[d]=o.days[d].map(norm);
-  if(Array.isArray(o.cats)&&o.cats.length)S.cats=normCats(o.cats);}catch(e){}}
+  if(Array.isArray(o.cats)&&o.cats.length)S.cats=normCats(o.cats);
+  if((o.catsV||0)<3){const v=S.cats.find(c=>c.name==="Vitality");
+    if(v){if(!v.subs.includes("Sleep"))v.subs.unshift("Sleep");if(!v.subs.includes("Other"))v.subs.push("Other")}
+    lsSave()}}catch(e){}}
 function saveDay(d){if(!entries(d).length)delete S.days[d];lsSave()}
 function saveCats(){lsSave()}
 function init(){
@@ -246,6 +259,7 @@ function formHTML(){
     <button class="btn" data-act="add">Add</button></div></div>`;
 }
 
+function colList(list){return list.length?list.map(e=>itemHTML(e)).join(""):`<div class="empty">None</div>`}
 function vToday(){
   const list=entries(S.date);const isToday=S.date===today();
   const rel=isToday?"Today":S.date===addDays(today(),-1)?"Yesterday":"";
@@ -256,7 +270,9 @@ function vToday(){
   h+=formHTML();
   const logs=list.filter(e=>e.kind==="log"),tasks=list.filter(e=>e.kind==="task");
   if(logs.length){const pos=logs.filter(e=>e.pts>0).reduce((s,e)=>s+e.pts,0),neg=logs.filter(e=>e.pts<0).reduce((s,e)=>s+e.pts,0);
-    h+=`<div class="sec"><span>Logged</span><span><span class="score p">+${pos}</span> / <span class="score n">${neg}</span></span></div><div class="card" style="padding:4px 12px">${logs.map(e=>itemHTML(e)).join("")}</div>`}
+    h+=`<div class="sec"><span>Logged</span><span><span class="score n">${neg}</span> / <span class="score p">+${pos}</span></span></div>
+      <div class="cols"><div class="card"><div class="colhead n">Negatives ${neg}</div>${colList(logs.filter(e=>e.pts<0))}</div>
+      <div class="card"><div class="colhead p">Positives +${pos}</div>${colList(logs.filter(e=>e.pts>0))}</div></div>`}
   if(tasks.length)h+=`<div class="sec"><span>Tasks</span><span>${tasks.filter(e=>e.done).length}/${tasks.length} done</span></div><div class="card" style="padding:4px 12px">${tasks.map(e=>itemHTML(e)).join("")}</div>`;
   if(!list.length)h+=`<div class="empty">Nothing logged for this day yet.</div>`;
   if(isToday){
@@ -280,6 +296,13 @@ function allCats(){
 }
 function matchCat(e,f){if(f==="all")return true;const[c,s]=f.split("›");return e.cat===c&&(s==null||e.sub===s)}
 
+function histBody(items){
+  const neg=items.filter(e=>e.kind==="log"&&e.pts<0),pos=items.filter(e=>e.kind==="log"&&e.pts>0),tasks=items.filter(e=>e.kind==="task");
+  let h="";
+  if(neg.length||pos.length)h+=`<div class="subcols"><div>${neg.length?neg.map(e=>itemHTML(e)).join(""):""}</div><div>${pos.length?pos.map(e=>itemHTML(e)).join(""):""}</div></div>`;
+  if(tasks.length)h+=`<div style="border-top:1px solid var(--line)">${tasks.map(e=>itemHTML(e)).join("")}</div>`;
+  return h;
+}
 function vHistory(){
   let h=`<div class="filters"><select data-f="fSign">
       <option value="all">Everything</option><option value="pos" ${S.fSign==="pos"?"selected":""}>Positives</option>
@@ -292,7 +315,7 @@ function vHistory(){
     if(!items.length)continue;shown++;
     const sc=items.reduce((s,e)=>s+counted(e),0);
     h+=`<div class="card" style="padding:10px 12px"><div class="dayhead"><span data-act="goto" data-d="${d}">${esc(nice(d,{weekday:"short",month:"short",day:"numeric",year:"numeric"}))}</span><span class="score ${cls(sc)}">${sgn(sc)}</span></div>
-      ${items.map(e=>itemHTML(e)).join("")}</div>`;
+      ${histBody(items)}</div>`;
     if(shown>=60)break;
   }
   if(!shown)h+=`<div class="empty">${ds.length?"No entries match.":"Your history will show up here once you start logging."}</div>`;
@@ -437,7 +460,7 @@ $("view").addEventListener("click",ev=>{
   else if(a==="kind"){S.kind=b.dataset.k;keepText(render)}
   else if(a==="pts"){S.pts=+b.dataset.p;keepText(render)}
   else if(a==="cat"){S.cat=b.dataset.c;S.sub="";keepText(render)}
-  else if(a==="sub"){S.sub=b.dataset.s;keepText(render)}
+  else if(a==="sub"){S.sub=b.dataset.s;if(SUB_DEFAULT_PTS[S.sub]!=null)S.pts=SUB_DEFAULT_PTS[S.sub];keepText(render)}
   else if(a==="add")addEntry();
   else if(a==="toggle")toggleTask(b.dataset.id);
   else if(a==="edit")editSheet(b.dataset.id);
