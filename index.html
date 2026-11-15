@@ -30,10 +30,16 @@ h1{font-size:22px;margin:6px 0 2px;letter-spacing:-.01em}
 .kind{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px}
 .kind button{border:1.5px solid var(--line);background:transparent;color:var(--ink);border-radius:10px;padding:8px 4px;font-weight:600;font-size:14px}
 .kind button.on{background:var(--accent);color:var(--bg);border-color:var(--accent)}
-.pts{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-bottom:12px}
+.pts{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:12px}
 .pts button{border:1.5px solid var(--line);background:transparent;color:var(--ink);border-radius:10px;padding:9px 0;font-weight:700;font-size:15px}
 .pts button.n.on{background:var(--neg-bg);border-color:var(--neg);color:var(--neg)}
 .pts button.p.on{background:var(--pos-bg);border-color:var(--pos);color:var(--pos)}
+.pts button.z.on{background:var(--line);border-color:var(--muted);color:var(--ink)}
+.badge.z{background:var(--line);color:var(--muted)}
+.chips.quick .chip{border-style:dashed;font-size:13px;padding:5px 11px}
+.quickline{display:flex;align-items:center;gap:6px;padding:2px 0 2px 32px;font-size:13px;color:var(--muted)}
+.quickline .tx{flex:1}
+.ptsel{width:auto!important;padding:5px 6px!important;font-size:13px!important}
 .chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:10px;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:999px;padding:6px 12px;font-size:14px}
@@ -56,6 +62,8 @@ textarea{resize:vertical;min-height:44px}
 .sec{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 2px 6px;display:flex;justify-content:space-between}
 .item{display:flex;gap:10px;align-items:flex-start;padding:10px 2px;border-top:1px solid var(--line)}
 .item:first-child{border-top:0}
+.item .tx{cursor:pointer}
+.edit{flex:none;border:0;background:transparent;color:var(--muted);font-size:16px;padding:0 2px;margin-top:-1px;line-height:1.4}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
 .cols .card{padding:4px 10px;margin:0}
 .cols .item{gap:7px;font-size:15px}
@@ -137,12 +145,15 @@ svg text{fill:var(--muted);font-size:10px}
 
 <script>
 (function(){
-const PTS=[-3,-2,-1,1,2,3];
-const SUB_DEFAULT_PTS={Sleep:1}; /* picking one of these subcategories presets its points */
+const PTS=[3,2,1,0,-1,-2,-3];
+const BASE_PTS=1; /* default score unless a subcategory sets its own */
+const STEWARDSHIP={name:"Stewardship",subs:["Money","Home"],subPts:{},items:{Money:[{name:"Payday update",pts:1},{name:"Missed payment",pts:-2}],Home:[{name:"Trash",pts:1,days:[3]}]}};
+const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const LEADERSHIP={name:"Leadership",subs:[],subPts:{},items:{}};
 const DEFAULT_CATS=[
-  {name:"Vitality",subs:["Sleep","Fitness","Weight","Grooming","Other"]},
-  {name:"Family",subs:[]},{name:"Work",subs:[]},{name:"Money",subs:[]},
-  {name:"Learning",subs:[]},{name:"Home",subs:[]},{name:"Mind",subs:[]}
+  {name:"Vitality",subs:["Sleep","Fitness","Weight","Grooming","Other"],subPts:{Sleep:1},items:{}},
+  clone(STEWARDSHIP),clone(LEADERSHIP),
+  {name:"Family",subs:[]},{name:"Work",subs:[]}
 ];
 const S={db:null,col:null,ready:false,days:{},cats:clone(DEFAULT_CATS),
   view:"today",date:ymd(new Date()),kind:"log",pts:1,cat:"Vitality",sub:"",range:30,fSign:"all",fCat:"all",q:"",open:{}};
@@ -158,47 +169,139 @@ function nid(){return Date.now().toString(36)+Math.random().toString(36).slice(2
 function $(id){return document.getElementById(id)}
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove("show"),1800)}
 function entries(d){return S.days[d]||[]}
-function sgn(n){return n>0?"+"+n:String(n)}
+function sgn(n){return n>0?"+"+n:n<0?"−"+(-n):"0"}
 function cls(n){return n>0?"p":n<0?"n":"z"}
+function ptsButtons(cur,act){return PTS.map(p=>`<button class="${cls(p)} ${cur===p?"on":""}" ${act}="pts" data-p="${p}">${sgn(p)}</button>`).join("")}
 function catObj(name){return S.cats.find(c=>c.name===name)}
 function label(e){return e.sub?e.cat+" › "+e.sub:e.cat}
-/* points that count: logs always, tasks only once done */
-function counted(e){return e.kind==="task"?(e.done?e.pts:0):e.pts}
+function counted(e){return e.pts}
 
 /* normalize older entries (win/task/blunder) into the scored model */
 function norm(e){
   const o=Object.assign({},e);
-  if(!o.kind){o.kind=o.type==="task"?"task":"log"}
-  if(typeof o.pts!=="number"||!o.pts){o.pts=o.type==="blunder"?-1:1}
+  o.kind="log";delete o.done;delete o.doneOn; /* tasks were removed: any old ones become ordinary entries */
+  if(typeof o.pts!=="number"){o.pts=o.type==="blunder"?-1:1}
   if(o.sub==null)o.sub="";
   delete o.type;return o;
 }
 function normCats(arr){
-  return arr.map(c=>typeof c==="string"?{name:c,subs:[]}:{name:String(c.name),subs:Array.isArray(c.subs)?c.subs.map(String):[]}).filter(c=>c.name);
+  return arr.map(c=>{if(typeof c==="string")c={name:c};
+    const o={name:String(c.name||""),subs:Array.isArray(c.subs)?c.subs.map(String):[],subPts:{},items:{}};
+    if(c.subPts&&typeof c.subPts==="object")for(const k in c.subPts)if(typeof c.subPts[k]==="number")o.subPts[k]=c.subPts[k];
+    if(c.items&&typeof c.items==="object")for(const k in c.items)if(Array.isArray(c.items[k]))o.items[k]=c.items[k].filter(x=>x&&x.name).map(x=>{const q={name:String(x.name),pts:typeof x.pts==="number"?x.pts:BASE_PTS};if(Array.isArray(x.days)&&x.days.length)q.days=x.days.filter(n=>n>=0&&n<=6);return q});
+    return o}).filter(c=>c.name);
 }
+function defPts(cat,sub){const c=catObj(cat);return c&&c.subPts&&typeof c.subPts[sub]==="number"?c.subPts[sub]:BASE_PTS}
+function quickItems(cat,sub,all){const c=catObj(cat);const list=(c&&c.items&&c.items[sub])||[];if(all)return list;const wd=parse(S.date).getDay();return list.filter(q=>!q.days||q.days.includes(wd))}
 
 /* ---------- storage (this device) ---------- */
 const LS="progresslog.v2";
-function lsSave(){try{localStorage.setItem(LS,JSON.stringify({days:S.days,cats:S.cats,catsV:3,savedAt:Date.now()}));return true}catch(e){toast("Couldn't save on this device");return false}}
-function lsLoad(){try{const o=JSON.parse(localStorage.getItem(LS)||"null");if(!o)return;
+/* L.dirty = days changed here but not yet confirmed by cloud sync */
+const L={dirty:{},catsDirty:false};
+function lsSave(){try{localStorage.setItem(LS,JSON.stringify({days:S.days,cats:S.cats,catsV:CATS_V,dirty:L.dirty,catsDirty:L.catsDirty,savedAt:Date.now()}));S.lsOK=true;return true}catch(e){S.lsOK=false;return false}}
+function lsLoad(){try{const o=JSON.parse(localStorage.getItem(LS)||"null");S.lsOK=true;if(!o)return;
+  if(o.dirty&&typeof o.dirty==="object")L.dirty=o.dirty;L.catsDirty=!!o.catsDirty;
   if(o.days&&typeof o.days==="object")for(const d in o.days)if(Array.isArray(o.days[d])&&o.days[d].length)S.days[d]=o.days[d].map(norm);
-  if(Array.isArray(o.cats)&&o.cats.length)S.cats=normCats(o.cats);
-  if((o.catsV||0)<3){const v=S.cats.find(c=>c.name==="Vitality");
-    if(v){if(!v.subs.includes("Sleep"))v.subs.unshift("Sleep");if(!v.subs.includes("Other"))v.subs.push("Other")}
-    lsSave()}}catch(e){}}
-function saveDay(d){if(!entries(d).length)delete S.days[d];lsSave()}
-function saveCats(){lsSave()}
-function init(){
-  lsLoad();fixSel();render();setStatus(statusLine());
+  if(Array.isArray(o.cats)&&o.cats.length){S.cats=normCats(o.cats);migrateAll(o.catsV||0)}
+  }catch(e){}}
+const CATS_V=6;
+/* bring an older category list (and entries that used old categories) up to date */
+function migrateAll(from){
+  if(from>=CATS_V)return;
+  if(from<3){const v=S.cats.find(c=>c.name==="Vitality");
+    if(v){if(!v.subs.includes("Sleep"))v.subs.unshift("Sleep");if(!v.subs.includes("Other"))v.subs.push("Other")}}
+  if(from<4)migrate4();
+  if(from<5)migrate5();
+  if(from<6){const st=S.cats.find(c=>c.name==="Stewardship");
+    if(st&&st.subs.includes("Home")){const l=st.items.Home||(st.items.Home=[]);if(!l.some(q=>q.name==="Trash"))l.push({name:"Trash",pts:1,days:[3]})}}
+  L.catsDirty=true;lsSave();
+}
+function moveEntries(fromCat,toCat,defSub){
+  for(const d in S.days)if(S.days[d].some(e=>e.cat===fromCat)){
+    S.days[d]=S.days[d].map(e=>e.cat===fromCat?Object.assign({},e,{cat:toCat,sub:e.sub||defSub}):e);L.dirty[d]=1}
+}
+/* v5: drop Mind and Learning (old entries keep their labels); Home moves under Stewardship */
+function migrate5(){
+  S.cats=S.cats.filter(c=>c.name!=="Mind"&&c.name!=="Learning");
+  const st=S.cats.find(c=>c.name==="Stewardship");
+  if(st){
+    const hi=S.cats.findIndex(c=>c.name==="Home");
+    if(!st.subs.includes("Home"))st.subs.push("Home");
+    if(hi>-1){S.cats[hi].subs.forEach(x=>{if(!st.subs.includes(x))st.subs.push(x)});S.cats.splice(hi,1)}
+    moveEntries("Home","Stewardship","Home");
+  }
+}
+/* v4: Sleep defaults to +1; Money moves under Stewardship; add Leadership */
+function migrate4(){
+  const v=S.cats.find(c=>c.name==="Vitality");if(v&&typeof v.subPts.Sleep!=="number")v.subPts.Sleep=1;
+  let st=S.cats.find(c=>c.name==="Stewardship");
+  if(!st){st=clone(STEWARDSHIP);const vi=S.cats.indexOf(v);S.cats.splice(vi>-1?vi+1:0,0,st)}
+  else{if(!st.subs.includes("Money"))st.subs.unshift("Money");if(!st.items.Money)st.items.Money=clone(STEWARDSHIP.items.Money)}
+  const mi=S.cats.findIndex(c=>c.name==="Money");
+  if(mi>-1){S.cats[mi].subs.forEach(x=>{if(!st.subs.includes(x))st.subs.push(x)});S.cats.splice(mi,1)}
+  moveEntries("Money","Stewardship","Money");
+  if(!S.cats.some(c=>c.name==="Leadership"))S.cats.splice(S.cats.indexOf(st)+1,0,clone(LEADERSHIP));
+}
+/* ---------- cloud sync (your Claude account), when this view allows it ---------- */
+const queues={};
+function queueWrite(id,fn){
+  const prev=queues[id]||Promise.resolve();
+  const next=prev.then(fn).catch(e=>{
+    if(e&&e.code==="unavailable")return new Promise(r=>setTimeout(r,600+Math.random()*600)).then(fn).catch(()=>syncFail());
+    syncFail(e);
+  });
+  queues[id]=next;return next;
+}
+function syncFail(e){S.sync=e&&e.code==="quota_exceeded"?"full":"error";render();toast(S.sync==="full"?"Cloud storage is full":"Couldn't sync — kept on this device")}
+function pushDay(d){
+  const list=entries(d).slice();const ref=S.col.doc(d);
+  return queueWrite(d,()=>(list.length?ref.set({date:d,entries:clone(list)}):ref.delete()).then(()=>{
+    if(JSON.stringify(entries(d))===JSON.stringify(list)){delete L.dirty[d];lsSave()}}));
+}
+function pushCats(){
+  const c=clone(S.cats);const ref=S.col.doc("settings");
+  return queueWrite("settings",()=>ref.set({categories:c,catsV:CATS_V}).then(()=>{if(JSON.stringify(S.cats)===JSON.stringify(c)){L.catsDirty=false;lsSave()}}));
+}
+function saveDay(d){if(!entries(d).length)delete S.days[d];L.dirty[d]=1;lsSave();if(S.col&&S.ready)pushDay(d);afterSave()}
+function saveCats(){L.catsDirty=true;lsSave();if(S.col&&S.ready)pushCats();afterSave()}
+function afterSave(){if(!S.lsOK&&S.sync!=="on")toast("⚠️ Not saved — this view can't store entries")}
+async function init(){
+  S.sync="connecting";lsLoad();fixSel();render();
   try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+  let db=null,user=null;
+  try{if(window.claude&&window.claude.use)[db,user]=await Promise.all([window.claude.use("db"),window.claude.use("user")])}catch(e){}
+  let id=null;if(db&&user){try{id=await user.id()}catch(e){}}
+  if(!db||!id){S.sync="off";render();return}
+  const timer=setTimeout(()=>{if(!S.ready){S.sync="off";render()}},10000);
+  S.col=db.collection("data/users/"+id);
+  S.col.onSnapshot(snap=>{
+    const days={};let cats=null,cloudV=0;
+    snap.docs.forEach(doc=>{const v=doc.data()||{};
+      if(doc.id==="settings"){if(Array.isArray(v.categories)&&v.categories.length){cats=normCats(v.categories);cloudV=v.catsV||0}}
+      else if(Array.isArray(v.entries))days[doc.id]=v.entries.map(norm)});
+    /* days changed here and not yet uploaded win over the cloud copy */
+    for(const d in L.dirty)days[d]=entries(d);
+    for(const d in days)if(!days[d].length)delete days[d];
+    S.days=days;
+    if(cats&&!L.catsDirty){S.cats=cats;if(cloudV<CATS_V)migrateAll(cloudV)}else if(!cats)L.catsDirty=true;
+    fixSel();lsSave();
+    if(!snap.metadata.fromCache){
+      clearTimeout(timer);const first=!S.ready;S.ready=true;S.sync="on";
+      if(first){Object.keys(L.dirty).forEach(pushDay);if(L.catsDirty)pushCats()}
+    }
+    render();
+  },()=>{clearTimeout(timer);S.sync="error";render()});
 }
 function fixSel(){
   const c=catObj(S.cat)||S.cats[0];S.cat=c?c.name:"";
-  if(!c||!c.subs.includes(S.sub))S.sub="";
+  if(!c||!c.subs.length)S.sub="";else if(!c.subs.includes(S.sub))S.sub=c.subs[0];
 }
-function setStatus(t){$("status").textContent=t}
+function setStatus(t){
+  const standalone=!window.claude; /* opened outside Claude, e.g. GitHub Pages: on-device storage is the normal mode */
+  const mode=S.sync==="on"?"☁︎ Synced":S.sync==="connecting"&&!standalone?"Connecting…":S.lsOK?(standalone?"📱 Saved on this device":"⚠️ Saved on this device only"):"⚠️ Not saving in this view";
+  const el=$("status");el.textContent=mode+" · "+t;el.style.color=mode.startsWith("⚠️")?"var(--neg)":""}
 function statusLine(){
-  const n=Object.keys(S.days).length;if(!n)return"Saved on this device · back up from Setup";
+  const n=Object.keys(S.days).length;if(!n)return"nothing logged yet";
   const st=streak();const wk=sumRange(7);
   return `${st?`🔥 ${st}-day streak · `:""}${sgn(wk)} pts this week`;
 }
@@ -208,9 +311,8 @@ function addEntry(){
   const ta=$("txt");const text=ta.value.trim();if(!text){ta.focus();return}
   if(!S.cat){toast("Add a category in Setup first");return}
   const e={id:nid(),kind:S.kind,pts:S.pts,cat:S.cat,sub:S.sub,text,t:Date.now()};
-  if(S.kind==="task")e.done=false;
   S.days[S.date]=entries(S.date).concat([e]);saveDay(S.date);
-  ta.value="";render();toast(S.kind==="task"?"Task added":sgn(S.pts)+" logged");
+  ta.value="";render();toast(sgn(S.pts)+" logged");
   setTimeout(()=>{const t=$("txt");t&&t.focus()},0);
 }
 function findEntry(id){for(const d in S.days){const i=S.days[d].findIndex(e=>e.id===id);if(i>-1)return{d,i,e:S.days[d][i]}}return null}
@@ -232,6 +334,7 @@ function dayScore(d){return entries(d).reduce((s,e)=>s+counted(e),0)}
 
 /* ---------- views ---------- */
 function render(){
+  setStatus(statusLine());
   document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.v===S.view));
   const v=$("view");
   v.innerHTML=S.view==="today"?vToday():S.view==="history"?vHistory():S.view==="progress"?vProgress():vSettings();
@@ -245,17 +348,18 @@ function itemHTML(e,showDate){
     <div class="tx" data-act="edit" data-id="${esc(e.id)}"><span>${esc(e.text)}</span>
       <div class="meta">${esc(label(e))}${showDate?" · "+esc(showDate):""}${isTask?(e.done&&e.doneOn?" · done "+esc(nice(e.doneOn,{month:"short",day:"numeric"})):" · task"):""}</div></div>
     ${badge}
+    <button class="edit" data-act="edit" data-id="${esc(e.id)}" aria-label="Edit entry">✎</button>
   </div>`;
 }
 
 function formHTML(){
-  const c=catObj(S.cat);
+  const c=catObj(S.cat);const quick=quickItems(S.cat,S.sub);
   return `<div class="card">
-    <div class="kind"><button class="${S.kind==="log"?"on":""}" data-act="kind" data-k="log">Log it</button><button class="${S.kind==="task"?"on":""}" data-act="kind" data-k="task">Task (pts when done)</button></div>
-    <div class="pts">${PTS.map(p=>`<button class="${p<0?"n":"p"} ${S.pts===p?"on":""}" data-act="pts" data-p="${p}">${sgn(p)}</button>`).join("")}</div>
+    <div class="pts">${ptsButtons(S.pts,"data-act")}</div>
     <div class="chips">${S.cats.map(x=>`<button class="chip ${S.cat===x.name?"on":""}" data-act="cat" data-c="${esc(x.name)}">${esc(x.name)}</button>`).join("")}</div>
-    ${c&&c.subs.length?`<div class="chips subs"><button class="chip ${S.sub===""?"on":""}" data-act="sub" data-s="">General</button>${c.subs.map(s=>`<button class="chip ${S.sub===s?"on":""}" data-act="sub" data-s="${esc(s)}">${esc(s)}</button>`).join("")}</div>`:""}
-    <div class="row"><textarea id="txt" rows="1" placeholder="${S.kind==="task"?"What needs doing?":S.pts>0?"What went well?":"What went wrong? (and the lesson)"}"></textarea>
+    ${c&&c.subs.length?`<div class="chips subs">${c.subs.map(x=>`<button class="chip ${S.sub===x?"on":""}" data-act="sub" data-s="${esc(x)}">${esc(x)}</button>`).join("")}</div>`:""}
+    ${quick.length?`<div class="chips quick">${quick.map((q,k)=>`<button class="chip" data-act="quick" data-k="${k}">${esc(q.name)} ${sgn(q.pts)}</button>`).join("")}</div>`:""}
+    <div class="row"><textarea id="txt" rows="1" placeholder="${S.pts>0?"What went well?":S.pts<0?"What went wrong? (and the lesson)":"What happened?"}"></textarea>
     <button class="btn" data-act="add">Add</button></div></div>`;
 }
 
@@ -268,18 +372,14 @@ function vToday(){
     <div class="d">${esc(nice(S.date))}<small>${rel?rel+" · ":""}<span class="score ${cls(sc)}">${sgn(sc)} pts</span></small></div>
     <button data-act="next" aria-label="Next day" ${isToday?"disabled style='opacity:.3'":""}>›</button></div>`;
   h+=formHTML();
-  const logs=list.filter(e=>e.kind==="log"),tasks=list.filter(e=>e.kind==="task");
+  const logs=list;
   if(logs.length){const pos=logs.filter(e=>e.pts>0).reduce((s,e)=>s+e.pts,0),neg=logs.filter(e=>e.pts<0).reduce((s,e)=>s+e.pts,0);
-    h+=`<div class="sec"><span>Logged</span><span><span class="score n">${neg}</span> / <span class="score p">+${pos}</span></span></div>
-      <div class="cols"><div class="card"><div class="colhead n">Negatives ${neg}</div>${colList(logs.filter(e=>e.pts<0))}</div>
-      <div class="card"><div class="colhead p">Positives +${pos}</div>${colList(logs.filter(e=>e.pts>0))}</div></div>`}
-  if(tasks.length)h+=`<div class="sec"><span>Tasks</span><span>${tasks.filter(e=>e.done).length}/${tasks.length} done</span></div><div class="card" style="padding:4px 12px">${tasks.map(e=>itemHTML(e)).join("")}</div>`;
+    const zero=logs.filter(e=>e.pts===0);
+    h+=`<div class="sec"><span>Logged</span><span><span class="score p">+${pos}</span> / <span class="score n">${sgn(neg)}</span></span></div>
+      <div class="cols"><div class="card"><div class="colhead p">Positives +${pos}</div>${colList(logs.filter(e=>e.pts>0))}</div>
+      <div class="card"><div class="colhead n">Negatives ${sgn(neg)}</div>${colList(logs.filter(e=>e.pts<0))}</div></div>
+      ${zero.length?`<div class="card" style="padding:4px 12px"><div class="colhead">Neutral</div>${zero.map(e=>itemHTML(e)).join("")}</div>`:""}`}
   if(!list.length)h+=`<div class="empty">Nothing logged for this day yet.</div>`;
-  if(isToday){
-    const open=[];for(const d in S.days)if(d<S.date)S.days[d].forEach(e=>{if(e.kind==="task"&&!e.done)open.push([d,e])});
-    open.sort((a,b)=>a[0]<b[0]?1:-1);
-    if(open.length)h+=`<div class="sec"><span>Still open from earlier</span><span>${open.length}</span></div><div class="card" style="padding:4px 12px">${open.slice(0,30).map(([d,e])=>itemHTML(e,nice(d,{month:"short",day:"numeric"}))).join("")}</div>`;
-  }
   return h;
 }
 
@@ -297,21 +397,21 @@ function allCats(){
 function matchCat(e,f){if(f==="all")return true;const[c,s]=f.split("›");return e.cat===c&&(s==null||e.sub===s)}
 
 function histBody(items){
-  const neg=items.filter(e=>e.kind==="log"&&e.pts<0),pos=items.filter(e=>e.kind==="log"&&e.pts>0),tasks=items.filter(e=>e.kind==="task");
+  const neg=items.filter(e=>e.kind==="log"&&e.pts<0),pos=items.filter(e=>e.kind==="log"&&e.pts>0),zero=items.filter(e=>e.kind==="log"&&e.pts===0);
   let h="";
-  if(neg.length||pos.length)h+=`<div class="subcols"><div>${neg.length?neg.map(e=>itemHTML(e)).join(""):""}</div><div>${pos.length?pos.map(e=>itemHTML(e)).join(""):""}</div></div>`;
-  if(tasks.length)h+=`<div style="border-top:1px solid var(--line)">${tasks.map(e=>itemHTML(e)).join("")}</div>`;
+  if(neg.length||pos.length)h+=`<div class="subcols"><div>${pos.map(e=>itemHTML(e)).join("")}</div><div>${neg.map(e=>itemHTML(e)).join("")}</div></div>`;
+  if(zero.length)h+=`<div style="border-top:1px solid var(--line)">${zero.map(e=>itemHTML(e)).join("")}</div>`;
   return h;
 }
 function vHistory(){
   let h=`<div class="filters"><select data-f="fSign">
       <option value="all">Everything</option><option value="pos" ${S.fSign==="pos"?"selected":""}>Positives</option>
-      <option value="neg" ${S.fSign==="neg"?"selected":""}>Negatives</option><option value="task" ${S.fSign==="task"?"selected":""}>Tasks</option></select>
+      <option value="neg" ${S.fSign==="neg"?"selected":""}>Negatives</option><option value="zero" ${S.fSign==="zero"?"selected":""}>Neutral</option></select>
     <select data-f="fCat">${catOptions(S.fCat,true)}</select></div>
     <input type="text" id="q" placeholder="Search entries…" value="${esc(S.q)}" style="margin-bottom:12px">`;
   const q=S.q.toLowerCase();const ds=Object.keys(S.days).sort().reverse();let shown=0;
   for(const d of ds){
-    const items=S.days[d].filter(e=>(S.fSign==="all"||(S.fSign==="task"?e.kind==="task":S.fSign==="pos"?(e.kind==="log"&&e.pts>0):(e.kind==="log"&&e.pts<0)))&&matchCat(e,S.fCat)&&(!q||e.text.toLowerCase().includes(q)));
+    const items=S.days[d].filter(e=>(S.fSign==="all"||(S.fSign==="zero"?e.pts===0:S.fSign==="pos"?e.pts>0:e.pts<0))&&matchCat(e,S.fCat)&&(!q||e.text.toLowerCase().includes(q)));
     if(!items.length)continue;shown++;
     const sc=items.reduce((s,e)=>s+counted(e),0);
     h+=`<div class="card" style="padding:10px 12px"><div class="dayhead"><span data-act="goto" data-d="${d}">${esc(nice(d,{weekday:"short",month:"short",day:"numeric",year:"numeric"}))}</span><span class="score ${cls(sc)}">${sgn(sc)}</span></div>
@@ -328,12 +428,12 @@ function dvBar(pos,neg,max){
 function vProgress(){
   const ds=inRange(S.range);const all=[];ds.forEach(d=>S.days[d].forEach(e=>all.push(e)));
   let pos=0,neg=0;all.forEach(e=>{const v=counted(e);if(v>0)pos+=v;else neg-=v});
-  const tasks=all.filter(e=>e.kind==="task"),done=tasks.filter(e=>e.done).length;const net=pos-neg;
+  const net=pos-neg;
   let h=`<div class="rng">${[7,30,90,365].map(n=>`<button class="${S.range===n?"on":""}" data-act="range" data-n="${n}">${n===365?"1y":n+"d"}</button>`).join("")}</div>
   <div class="stats">
     <div class="stat"><b class="score ${cls(net)}">${sgn(net)}</b><small>Net points${ds.length?" · "+(net/ds.length>=0?"+":"")+(net/ds.length).toFixed(1)+"/day":""}</small></div>
     <div class="stat"><b><span class="score p">+${pos}</span> <span class="score n" style="font-size:18px">−${neg}</span></b><small>Gained / lost</small></div>
-    <div class="stat"><b style="color:var(--task)">${done}<span style="font-size:15px;color:var(--muted)">/${tasks.length}</span></b><small>Tasks done${tasks.length?" · "+Math.round(done/tasks.length*100)+"%":""}</small></div>
+    <div class="stat"><b>${all.length}</b><small>Entries · ${all.filter(e=>e.pts>0).length} up, ${all.filter(e=>e.pts<0).length} down</small></div>
     <div class="stat"><b>${ds.length}<span style="font-size:15px;color:var(--muted)">/${S.range}</span></b><small>Days logged · 🔥 ${streak()} streak</small></div>
   </div>`;
   h+=`<div class="sec"><span>Week by week</span><span>last 12 weeks</span></div><div class="card">${weekChart()}
@@ -377,20 +477,24 @@ function weekChart(){
   return s+`</svg>`;
 }
 
+function ptSelect(i,j,cur){return `<select class="ptsel" data-ptsel="${i}" data-j="${j}" aria-label="Default points">${PTS.map(p=>`<option value="${p}" ${p===cur?"selected":""}>${sgn(p)}</option>`).join("")}</select>`}
 function vSettings(){
-  let h=`<div class="sec"><span>Categories &amp; subcategories</span></div><div class="card" style="padding:4px 12px">`;
+  let h=`<div class="sec"><span>Categories &amp; subcategories</span><span>default pts</span></div><div class="card" style="padding:4px 12px">`;
   S.cats.forEach((c,i)=>{
     h+=`<div class="catblock"><div class="cathead"><div class="tx">${esc(c.name)}</div>
       <button class="btn ghost sm" data-act="up" data-i="${i}" ${i===0?"disabled":""} aria-label="Move up">↑</button>
       <button class="btn ghost sm" data-act="rename" data-i="${i}">Rename</button>
       <button class="btn danger sm" data-act="rmcat" data-i="${i}" ${S.cats.length<2?"disabled":""} aria-label="Remove">✕</button></div>`;
-    c.subs.forEach((s,j)=>{h+=`<div class="subline"><div class="tx">${esc(s)}</div>
+    c.subs.forEach((x,j)=>{h+=`<div class="subline"><div class="tx">${esc(x)}</div>${ptSelect(i,j,defPts(c.name,x))}
       <button class="btn ghost sm" data-act="rensub" data-i="${i}" data-j="${j}">Rename</button>
-      <button class="btn danger sm" data-act="rmsub" data-i="${i}" data-j="${j}" aria-label="Remove">✕</button></div>`});
+      <button class="btn danger sm" data-act="rmsub" data-i="${i}" data-j="${j}" aria-label="Remove">✕</button></div>`;
+      (c.items[x]||[]).forEach((q,k)=>{h+=`<div class="quickline"><div class="tx">↳ ${esc(q.name)} <b class="score ${cls(q.pts)}">${sgn(q.pts)}</b>${q.days?` · ${q.days.map(n=>DOW[n]).join(", ")} only`:""}</div>
+        <button class="btn danger sm" data-act="rmquick" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Remove">✕</button></div>`});
+      h+=`<div class="quickline"><button class="btn ghost sm" data-act="addquick" data-i="${i}" data-j="${j}">+ Quick entry</button></div>`});
     h+=`<div class="subline"><button class="btn ghost sm" data-act="addsub" data-i="${i}">+ Subcategory</button></div></div>`;
   });
   h+=`</div><div class="row" style="margin-bottom:16px"><input type="text" id="newcat" placeholder="New category"><button class="btn" data-act="addcat">Add</button></div>`;
-  h+=`<div class="sec"><span>How points work</span></div><div class="note" style="margin-bottom:12px">Score each entry from −3 to +3. Tasks carry points too, but they only count once you tick them done. Everything rolls up into daily, weekly and per-category totals.</div>`;
+  h+=`<div class="sec"><span>How points work</span></div><div class="note" style="margin-bottom:12px">Score each entry from +3 to −3 (0 for neutral). New entries start at +1 unless the subcategory has its own default, and quick entries (like Payday update) fill in their text and points. Everything rolls up into daily, weekly and per-category totals.</div>`;
   h+=`<div class="sec"><span>Backup &amp; restore</span></div><div class="card"><div style="font-size:14px;color:var(--muted);margin-bottom:10px">Your log lives in this browser on this device. Download a backup now and then (or after a big week) — restore it here or on a new phone.${lastBackup()}</div>
     <div class="row" style="flex-wrap:wrap"><button class="btn" data-act="backup">Download backup</button>
     <button class="btn ghost" data-act="restore">Restore</button><button class="btn ghost" data-act="csv">Download CSV</button></div>
@@ -402,12 +506,12 @@ function vSettings(){
 /* ---------- sheets ---------- */
 function openSheet(html){$("sheet").innerHTML=html;$("sheetBg").classList.add("show")}
 function closeSheet(){$("sheetBg").classList.remove("show")}
-function subSelect(cat,sel){const c=allCats().find(x=>x.name===cat);return `<option value="">General</option>`+(c?c.subs.map(s=>`<option ${s===sel?"selected":""}>${esc(s)}</option>`).join(""):"")}
+function subSelect(cat,sel){const c=allCats().find(x=>x.name===cat);const subs=c?c.subs:[];
+  return (!subs.length||sel===""?`<option value="">—</option>`:"")+subs.map(x=>`<option ${x===sel?"selected":""}>${esc(x)}</option>`).join("")}
 function editSheet(id){
   const f=findEntry(id);if(!f)return;const e=f.e;
   openSheet(`<h3>Edit entry</h3>
-    <div class="kind"><button class="${e.kind==="log"?"on":""}" data-sact="ekind" data-k="log">Log it</button><button class="${e.kind==="task"?"on":""}" data-sact="ekind" data-k="task">Task</button></div>
-    <div class="pts">${PTS.map(p=>`<button class="${p<0?"n":"p"} ${e.pts===p?"on":""}" data-sact="epts" data-p="${p}">${sgn(p)}</button>`).join("")}</div>
+    <div class="pts">${ptsButtons(e.pts,"data-sact").replace(/="pts"/g,'="epts"')}</div>
     <div class="row" style="margin-bottom:10px"><select id="ecat">${allCats().map(c=>`<option ${c.name===e.cat?"selected":""}>${esc(c.name)}</option>`).join("")}</select>
     <select id="esub">${subSelect(e.cat,e.sub)}</select></div>
     <textarea id="etxt" rows="3" style="margin-bottom:10px">${esc(e.text)}</textarea>
@@ -422,6 +526,12 @@ function textSheet(title,val,cb){
     <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-sact="close">Cancel</button><button class="btn" data-sact="ok">Save</button></div>`);
   textSheet.cb=cb;setTimeout(()=>$("stxt").focus(),50);
 }
+function quickSheet(i,j){
+  openSheet(`<h3>Quick entry for ${esc(S.cats[i].subs[j])}</h3><input type="text" id="qname" placeholder="e.g. Payday update" style="margin-bottom:10px">
+    <div class="pts">${ptsButtons(BASE_PTS,"data-sact").replace(/="pts"/g,'="epts"')}</div>
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-sact="close">Cancel</button><button class="btn" data-sact="quickok">Save</button></div>`);
+  const sh=$("sheet");sh.dataset.pts=BASE_PTS;sh.dataset.i=i;sh.dataset.j=j;setTimeout(()=>$("qname").focus(),50);
+}
 function confirmSheet(msg,cb){
   openSheet(`<h3>${esc(msg)}</h3><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-sact="close">Cancel</button><button class="btn danger" data-sact="yes">Remove</button></div>`);
   confirmSheet.cb=cb;
@@ -435,14 +545,14 @@ $("sheetBg").addEventListener("click",ev=>{
   if(a==="epts"){sh.dataset.pts=b.dataset.p;sh.querySelectorAll(".pts button").forEach(x=>x.classList.toggle("on",x===b));return}
   if(a==="ok"){const v=$("stxt").value.trim();if(v&&!/›/.test(v))textSheet.cb(v);return closeSheet()}
   if(a==="yes"){confirmSheet.cb();return closeSheet()}
+  if(a==="quickok"){const nm=$("qname").value.trim();if(!nm)return;const i=+sh.dataset.i,j=+sh.dataset.j;const c=clone(S.cats);const sub=c[i].subs[j];
+    (c[i].items[sub]=c[i].items[sub]||[]).push({name:nm,pts:+sh.dataset.pts});closeSheet();return setCats(c)}
   const f=findEntry(sh.dataset.id);if(!f)return closeSheet();
   if(a==="del"){S.days[f.d]=S.days[f.d].filter(x=>x.id!==f.e.id);saveDay(f.d);closeSheet();render();toast("Deleted");return}
   if(a==="save"){
     const text=$("etxt").value.trim();if(!text)return;
     const nd=$("edate").value||f.d;
-    const e=Object.assign({},f.e,{text,cat:$("ecat").value,sub:$("esub").value,kind:sh.dataset.kind,pts:+sh.dataset.pts});
-    if(e.kind==="task"&&e.done===undefined)e.done=false;
-    if(e.kind!=="task"){delete e.done;delete e.doneOn}
+    const e=Object.assign({},f.e,{text,cat:$("ecat").value,sub:$("esub").value,pts:+sh.dataset.pts});
     if(nd!==f.d){S.days[f.d]=S.days[f.d].filter(x=>x.id!==e.id);saveDay(f.d);S.days[nd]=entries(nd).concat([e]);saveDay(nd)}
     else{S.days[f.d]=S.days[f.d].slice();S.days[f.d][f.i]=e;saveDay(f.d)}
     closeSheet();render();toast("Saved");
@@ -459,15 +569,18 @@ $("view").addEventListener("click",ev=>{
   else if(a==="next"){if(S.date<today()){S.date=addDays(S.date,1);render()}}
   else if(a==="kind"){S.kind=b.dataset.k;keepText(render)}
   else if(a==="pts"){S.pts=+b.dataset.p;keepText(render)}
-  else if(a==="cat"){S.cat=b.dataset.c;S.sub="";keepText(render)}
-  else if(a==="sub"){S.sub=b.dataset.s;if(SUB_DEFAULT_PTS[S.sub]!=null)S.pts=SUB_DEFAULT_PTS[S.sub];keepText(render)}
+  else if(a==="cat"){S.cat=b.dataset.c;S.sub="";fixSel();S.pts=defPts(S.cat,S.sub);keepText(render)}
+  else if(a==="sub"){S.sub=b.dataset.s;S.pts=defPts(S.cat,S.sub);keepText(render)}
+  else if(a==="quick"){const q=quickItems(S.cat,S.sub)[+b.dataset.k];if(!q)return;S.pts=q.pts;render();const t=$("txt");t.value=q.name;t.focus()}
+  else if(a==="addquick")quickSheet(i,j);
+  else if(a==="rmquick"){const k=+b.dataset.k;const c=clone(S.cats);const sub=c[i].subs[j];c[i].items[sub].splice(k,1);if(!c[i].items[sub].length)delete c[i].items[sub];setCats(c)}
   else if(a==="add")addEntry();
   else if(a==="toggle")toggleTask(b.dataset.id);
   else if(a==="edit")editSheet(b.dataset.id);
   else if(a==="goto"){S.date=b.dataset.d;S.view="today";render();window.scrollTo(0,0)}
   else if(a==="range"){S.range=+b.dataset.n;render()}
   else if(a==="expand"){S.open[b.dataset.c]=!S.open[b.dataset.c];render()}
-  else if(a==="addcat"){const v=$("newcat").value.trim();if(!v||/›/.test(v))return;if(catObj(v))return toast("Already exists");setCats(S.cats.concat([{name:v,subs:[]}]))}
+  else if(a==="addcat"){const v=$("newcat").value.trim();if(!v||/›/.test(v))return;if(catObj(v))return toast("Already exists");setCats(S.cats.concat([{name:v,subs:[],subPts:{},items:{}}]))}
   else if(a==="rename"){const old=S.cats[i].name;textSheet("Rename category",old,v=>{
       if(v===old)return;if(catObj(v))return toast("Already exists");
       const c=clone(S.cats);c[i].name=v;if(S.cat===old)S.cat=v;
@@ -479,8 +592,9 @@ $("view").addEventListener("click",ev=>{
   else if(a==="rensub"){const cat=S.cats[i].name,old=S.cats[i].subs[j];textSheet("Rename subcategory",old,v=>{
       if(v===old)return;if(S.cats[i].subs.includes(v))return toast("Already exists");
       const c=clone(S.cats);c[i].subs[j]=v;if(S.cat===cat&&S.sub===old)S.sub=v;
+      if(old in c[i].subPts){c[i].subPts[v]=c[i].subPts[old];delete c[i].subPts[old]}if(c[i].items[old]){c[i].items[v]=c[i].items[old];delete c[i].items[old]}
       remapEntries(e=>e.cat===cat&&e.sub===old,()=>({sub:v}));setCats(c)})}
-  else if(a==="rmsub"){confirmSheet(`Remove "${S.cats[i].subs[j]}"? Past entries keep their label.`,()=>{const c=clone(S.cats);c[i].subs.splice(j,1);setCats(c)})}
+  else if(a==="rmsub"){confirmSheet(`Remove "${S.cats[i].subs[j]}"? Past entries keep their label.`,()=>{const c=clone(S.cats);const sub=c[i].subs[j];c[i].subs.splice(j,1);delete c[i].subPts[sub];delete c[i].items[sub];setCats(c)})}
   else if(a==="csv")downloadCSV();
   else if(a==="backup")backup();
   else if(a==="restore")$("restoreFile").click();
@@ -493,7 +607,9 @@ $("view").addEventListener("input",ev=>{
   if(ev.target.id==="q"){S.q=ev.target.value;const pos=ev.target.selectionStart;render();const q=$("q");q.focus();q.setSelectionRange(pos,pos)}
   if(ev.target.id==="txt"){ev.target.style.height="auto";ev.target.style.height=Math.min(160,ev.target.scrollHeight)+"px"}
 });
-$("view").addEventListener("change",ev=>{const f=ev.target.dataset.f;if(f){S[f]=ev.target.value;render()}});
+$("view").addEventListener("change",ev=>{const f=ev.target.dataset.f;if(f){S[f]=ev.target.value;render();return}
+  const ps=ev.target.dataset.ptsel;if(ps!=null){const i=+ps,j=+ev.target.dataset.j;const c=clone(S.cats);const p=+ev.target.value;const sub=c[i].subs[j];
+    if(p===BASE_PTS)delete c[i].subPts[sub];else c[i].subPts[sub]=p;setCats(c);toast(`${sub} now starts at ${sgn(p)}`)}});
 function download(name,text,type){
   const blob=new Blob([text],{type});const url=URL.createObjectURL(blob);
   const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();
@@ -517,8 +633,8 @@ document.addEventListener("change",ev=>{
 });
 function downloadCSV(){
   const q=s=>'"'+String(s==null?"":s).replace(/"/g,'""')+'"';
-  const rows=[["date","kind","category","subcategory","points","counted","text","done","done_on"]];
-  Object.keys(S.days).sort().forEach(d=>S.days[d].forEach(e=>rows.push([d,e.kind,e.cat,e.sub,e.pts,counted(e),e.text,e.kind==="task"?(e.done?"yes":"no"):"",e.doneOn||""])));
+  const rows=[["date","category","subcategory","points","text"]];
+  Object.keys(S.days).sort().forEach(d=>S.days[d].forEach(e=>rows.push([d,e.cat,e.sub,e.pts,e.text])));
   download(`progress-log-${today()}.csv`,rows.map(r=>r.map(q).join(",")).join("\n"),"text/csv");toast(`Downloaded ${rows.length-1} entries`);
 }
 init();

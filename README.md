@@ -2,9 +2,11 @@
 
 A one-page, phone-first log for daily progress across categories and subcategories.
 
-- Score each entry from −3 to +3, or add it as a task that earns its points when ticked done.
-- Categories with subcategories (e.g. Vitality → Fitness, Weight, Grooming), editable in Setup.
-- History with filters and search; Progress shows net points, a 12-week chart, and per-category/subcategory totals.
+- Score each entry from +3 to −3 (0 = neutral). Entries start at +1 unless a subcategory sets its own default.
+- Categories with subcategories — Vitality (Sleep, Fitness, Weight, Grooming, Other), Stewardship (Money, Home), Leadership, Family, Work — all editable in Setup.
+- Quick entries fill in text and points in one tap (e.g. Payday update +1, Missed payment −2, Trash +1 on Wednesdays).
+- History with filters and search; tap ✎ on any entry to change its points, category, text or date, or delete it.
+- Progress shows net points, a 12-week chart, and per-category/subcategory totals.
 
 ## Use it
 
