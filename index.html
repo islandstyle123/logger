@@ -154,13 +154,14 @@ svg text{fill:var(--muted);font-size:10px}
 (function(){
 const PTS=[3,2,1,0,-1,-2,-3];
 const BASE_PTS=1; /* default score unless a subcategory sets its own */
-const STEWARDSHIP={name:"Stewardship",subs:["Money","Home"],subPts:{},items:{Money:[{name:"Payday update",pts:1},{name:"Missed payment",pts:-2}],Home:[{name:"Clean",pts:1},{name:"Dishes",pts:1},{name:"Trash",pts:1,days:[3]}]}};
+const STEWARDSHIP={name:"Stewardship",subs:["Money","Home","Family"],subPts:{},items:{Family:[{name:"Fun activity",pts:1},{name:"Lunches",pts:1},{name:"Drop/pick up",pts:1},{name:"Arrange babysitter",pts:2}],Money:[{name:"Payday update",pts:1,dates:[5,20]},{name:"Missed payment",pts:-2}],Home:[{name:"Clean",pts:1},{name:"Dishes",pts:1},{name:"Trash",pts:1,days:[3]}]}};
 const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function ord(n){const t=n%100;return n+((t>10&&t<14)?"th":["th","st","nd","rd"][n%10]||"th")}
 const LEADERSHIP={name:"Leadership",subs:[],subPts:{},items:{}};
 const DEFAULT_CATS=[
   {name:"Vitality",subs:["Sleep","Fitness","Weight","Grooming","Other"],subPts:{Sleep:1},items:{}},
   clone(STEWARDSHIP),clone(LEADERSHIP),
-  {name:"Family",subs:[]},{name:"Work",subs:[]}
+  {name:"Work",subs:[]}
 ];
 const S={db:null,col:null,ready:false,days:{},cats:clone(DEFAULT_CATS),
   view:"today",date:ymd(new Date()),kind:"log",pts:1,cat:"Vitality",sub:"",range:30,fSign:"all",fCat:"all",q:"",open:{}};
@@ -196,11 +197,11 @@ function normCats(arr){
   return arr.map(c=>{if(typeof c==="string")c={name:c};
     const o={name:String(c.name||""),subs:Array.isArray(c.subs)?c.subs.map(String):[],subPts:{},items:{}};
     if(c.subPts&&typeof c.subPts==="object")for(const k in c.subPts)if(typeof c.subPts[k]==="number")o.subPts[k]=c.subPts[k];
-    if(c.items&&typeof c.items==="object")for(const k in c.items)if(Array.isArray(c.items[k]))o.items[k]=c.items[k].filter(x=>x&&x.name).map(x=>{const q={name:String(x.name),pts:typeof x.pts==="number"?x.pts:BASE_PTS};if(Array.isArray(x.days)&&x.days.length)q.days=x.days.filter(n=>n>=0&&n<=6);return q});
+    if(c.items&&typeof c.items==="object")for(const k in c.items)if(Array.isArray(c.items[k]))o.items[k]=c.items[k].filter(x=>x&&x.name).map(x=>{const q={name:String(x.name),pts:typeof x.pts==="number"?x.pts:BASE_PTS};if(Array.isArray(x.days)&&x.days.length)q.days=x.days.filter(n=>n>=0&&n<=6);if(Array.isArray(x.dates)&&x.dates.length)q.dates=x.dates.filter(n=>n>=1&&n<=31);return q});
     return o}).filter(c=>c.name);
 }
 function defPts(cat,sub){const c=catObj(cat);return c&&c.subPts&&typeof c.subPts[sub]==="number"?c.subPts[sub]:BASE_PTS}
-function quickItems(cat,sub,all){const c=catObj(cat);const list=(c&&c.items&&c.items[sub])||[];if(all)return list;const wd=parse(S.date).getDay();return list.filter(q=>!q.days||q.days.includes(wd))}
+function quickItems(cat,sub,all){const c=catObj(cat);const list=(c&&c.items&&c.items[sub])||[];if(all)return list;const dt=parse(S.date),wd=dt.getDay(),md=dt.getDate();return list.filter(q=>(!q.days||q.days.includes(wd))&&(!q.dates||q.dates.includes(md)))}
 
 /* ---------- storage (this device) ---------- */
 const LS="progresslog.v2";
@@ -212,8 +213,8 @@ function lsLoad(){try{const o=JSON.parse(localStorage.getItem(LS)||"null");S.lsO
   if(o.days&&typeof o.days==="object")for(const d in o.days)if(Array.isArray(o.days[d])&&o.days[d].length)S.days[d]=o.days[d].map(norm);
   if(Array.isArray(o.cats)&&o.cats.length){S.cats=normCats(o.cats);migrateAll(o.catsV||0)}
   }catch(e){}}
-const CATS_V=7;
-const APP_VERSION="11.15.2026.7"; /* MM.DD.YYYY.N — date of release, N = release number that day */
+const CATS_V=8;
+const APP_VERSION="11.16.2026.1"; /* MM.DD.YYYY.N — date of release, N = release number that day */
 /* bring an older category list (and entries that used old categories) up to date */
 function migrateAll(from){
   if(from>=CATS_V)return;
@@ -226,6 +227,17 @@ function migrateAll(from){
   if(from<7){const st=S.cats.find(c=>c.name==="Stewardship");
     if(st&&st.subs.includes("Home")){const l=st.items.Home||(st.items.Home=[]);
       ["Dishes","Clean"].forEach(n=>{if(!l.some(q=>q.name===n))l.unshift({name:n,pts:1})})}}
+  /* v8: Payday update only on the 5th and 20th; Family moves under Stewardship with its quick entries */
+  if(from<8){const st=S.cats.find(c=>c.name==="Stewardship");
+    if(st){
+      const pd=(st.items.Money||[]).find(q=>q.name==="Payday update");if(pd&&!pd.dates)pd.dates=[5,20];
+      if(!st.subs.includes("Family"))st.subs.push("Family");
+      const fi=S.cats.findIndex(c=>c.name==="Family");
+      if(fi>-1){S.cats[fi].subs.forEach(x=>{if(!st.subs.includes(x))st.subs.push(x)});S.cats.splice(fi,1)}
+      moveEntries("Family","Stewardship","Family");
+      const l=st.items.Family||(st.items.Family=[]);
+      [{name:"Fun activity",pts:1},{name:"Lunches",pts:1},{name:"Drop/pick up",pts:1},{name:"Arrange babysitter",pts:2}].forEach(q=>{if(!l.some(x=>x.name===q.name))l.push(q)});
+    }}
   L.catsDirty=true;lsSave();
 }
 function moveEntries(fromCat,toCat,defSub){
@@ -514,7 +526,7 @@ function vSettings(){
     c.subs.forEach((x,j)=>{h+=`<div class="subline"><div class="tx">${esc(x)}</div>${ptSelect(i,j,defPts(c.name,x))}
       <button class="btn ghost sm" data-act="rensub" data-i="${i}" data-j="${j}">Rename</button>
       <button class="btn danger sm" data-act="rmsub" data-i="${i}" data-j="${j}" aria-label="Remove">✕</button></div>`;
-      (c.items[x]||[]).forEach((q,k)=>{h+=`<div class="quickline"><div class="tx">↳ ${esc(q.name)} <b class="score ${cls(q.pts)}">${sgn(q.pts)}</b>${q.days?` · ${q.days.map(n=>DOW[n]).join(", ")} only`:""}</div>
+      (c.items[x]||[]).forEach((q,k)=>{h+=`<div class="quickline"><div class="tx">↳ ${esc(q.name)} <b class="score ${cls(q.pts)}">${sgn(q.pts)}</b>${q.days?` · ${q.days.map(n=>DOW[n]).join(", ")} only`:""}${q.dates?` · ${q.dates.map(ord).join(" & ")} only`:""}</div>
         <button class="btn danger sm" data-act="rmquick" data-i="${i}" data-j="${j}" data-k="${k}" aria-label="Remove">✕</button></div>`});
       h+=`<div class="quickline"><button class="btn ghost sm" data-act="addquick" data-i="${i}" data-j="${j}">+ Quick entry</button></div>`});
     h+=`<div class="subline"><button class="btn ghost sm" data-act="addsub" data-i="${i}">+ Subcategory</button></div></div>`;
