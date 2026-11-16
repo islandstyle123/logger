@@ -157,11 +157,11 @@ const BASE_PTS=1; /* default score unless a subcategory sets its own */
 const STEWARDSHIP={name:"Stewardship",subs:["Money","Home","Family"],subPts:{},items:{Family:[{name:"Fun activity",pts:1},{name:"Lunches",pts:1},{name:"Drop/pick up",pts:1},{name:"Arrange babysitter",pts:2}],Money:[{name:"Payday update",pts:1,dates:[5,20]},{name:"Missed payment",pts:-2}],Home:[{name:"Clean",pts:1},{name:"Dishes",pts:1},{name:"Trash",pts:1,days:[3]}]}};
 const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 function ord(n){const t=n%100;return n+((t>10&&t<14)?"th":["th","st","nd","rd"][n%10]||"th")}
-const LEADERSHIP={name:"Leadership",subs:["TCB","Praise","Snap","Boundary"],subPts:{Snap:-1},items:{}};
+const LEADERSHIP={name:"Leadership",subs:["TCB","Praise","Snap","Boundary","Veg"],subPts:{Snap:-1,Veg:-1},items:{}};
 const DEFAULT_CATS=[
   {name:"Vitality",subs:["Sleep","Fitness","Weight","Grooming","Other"],subPts:{Sleep:1},items:{}},
   clone(STEWARDSHIP),clone(LEADERSHIP),
-  {name:"Work",subs:[]}
+  {name:"Work",subs:["Up to date","Building","TCB","Other"],subPts:{},items:{}}
 ];
 const S={db:null,col:null,ready:false,days:{},cats:clone(DEFAULT_CATS),
   view:"today",date:ymd(new Date()),kind:"log",pts:1,cat:"Vitality",sub:"",range:30,fSign:"all",fCat:"all",q:"",open:{}};
@@ -213,8 +213,8 @@ function lsLoad(){try{const o=JSON.parse(localStorage.getItem(LS)||"null");S.lsO
   if(o.days&&typeof o.days==="object")for(const d in o.days)if(Array.isArray(o.days[d])&&o.days[d].length)S.days[d]=o.days[d].map(norm);
   if(Array.isArray(o.cats)&&o.cats.length){S.cats=normCats(o.cats);migrateAll(o.catsV||0)}
   }catch(e){}}
-const CATS_V=9;
-const APP_VERSION="11.16.2026.2"; /* MM.DD.YYYY.N — date of release, N = release number that day */
+const CATS_V=10;
+const APP_VERSION="11.16.2026.3"; /* MM.DD.YYYY.N — date of release, N = release number that day */
 /* bring an older category list (and entries that used old categories) up to date */
 function migrateAll(from){
   if(from>=CATS_V)return;
@@ -227,6 +227,15 @@ function migrateAll(from){
   if(from<7){const st=S.cats.find(c=>c.name==="Stewardship");
     if(st&&st.subs.includes("Home")){const l=st.items.Home||(st.items.Home=[]);
       ["Dishes","Clean"].forEach(n=>{if(!l.some(q=>q.name===n))l.unshift({name:n,pts:1})})}}
+  /* v10: Work subcategories (all +1); Veg (−1) under Leadership */
+  if(from<10){
+    const ld=S.cats.find(c=>c.name==="Leadership");
+    if(ld){if(!ld.subs.includes("Veg"))ld.subs.push("Veg");if(typeof ld.subPts.Veg!=="number")ld.subPts.Veg=-1}
+    let wk=S.cats.find(c=>c.name==="Work");
+    if(!wk){wk={name:"Work",subs:[],subPts:{},items:{}};S.cats.push(wk)}
+    ["Up to date","Building","TCB"].forEach(x=>{if(!wk.subs.includes(x))wk.subs.push(x)});
+    wk.subs=wk.subs.filter(x=>x!=="Other").concat(["Other"]);
+  }
   /* v9: Leadership subcategories (Snap starts at −1, the rest at +1) */
   if(from<9){const ld=S.cats.find(c=>c.name==="Leadership");
     if(ld){["TCB","Praise","Snap","Boundary"].forEach(x=>{if(!ld.subs.includes(x))ld.subs.push(x)});if(typeof ld.subPts.Snap!=="number")ld.subPts.Snap=-1}}
